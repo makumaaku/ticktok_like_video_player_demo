@@ -11,42 +11,18 @@ class VideoListPage extends ConsumerStatefulWidget {
   ConsumerState<VideoListPage> createState() => _VideoListPageState();
 }
 
+final initializedIndexProvider = StateProvider<List<int>>((ref) => []);
+
 class _VideoListPageState extends ConsumerState<VideoListPage> {
   late PageController pageController;
   Map<int, VideoPlayerController> controllerMap = {};
-
-  final initializedIndexProvider = StateProvider<List<int>>((ref) => []);
 
   @override
   void initState() {
     super.initState();
     loadInitialVideo();
-    pageController = PageController()
-      ..addListener(() {
-        final page = pageController.page ?? 0;
-        final pageInt = page.floor();
-        final isPageChanging = page != pageInt;
-        if (isPageChanging) {
-          return;
-        }
-        final nextPageIndex = pageInt + 1;
-        if (videoUrls.length < nextPageIndex) {
-          return;
-        }
-        if (controllerMap[nextPageIndex] != null) {
-          return;
-        }
-        final willLoadVideoUrl = videoUrls[nextPageIndex];
-        final videoController = VideoPlayerController.network(willLoadVideoUrl);
-        videoController.initialize().then((_) {
-          final currentState = ref.read(initializedIndexProvider);
-          ref.read(initializedIndexProvider.notifier).state = currentState
-            ..add(nextPageIndex);
-          videoController.setLooping(true);
-          print('initialized: $nextPageIndex');
-        });
-        controllerMap[nextPageIndex] = videoController;
-      });
+    // 連続スワイプするとpageが整数にならない場合あり。
+    pageController = PageController();
   }
 
   void loadInitialVideo() {
@@ -59,8 +35,10 @@ class _VideoListPageState extends ConsumerState<VideoListPage> {
       VideoPlayerController controller =
           VideoPlayerController.network(videoUrl);
       controller.initialize().then((_) {
-        ref.read(initializedIndexProvider.notifier).state =
-            ref.read(initializedIndexProvider)..add(i);
+        ref.read(initializedIndexProvider.notifier).state = [
+          ...ref.read(initializedIndexProvider),
+          i
+        ];
         controller.setLooping(true);
         print('initialized: $i');
         if (i == 0) {
@@ -83,15 +61,41 @@ class _VideoListPageState extends ConsumerState<VideoListPage> {
   @override
   Widget build(BuildContext context) {
     final initializedIndexes = ref.watch(initializedIndexProvider);
+    print('initializedIndexes: $initializedIndexes');
     return Scaffold(
       body: PageView.builder(
           controller: pageController,
           scrollDirection: Axis.vertical,
           itemCount: videoUrls.length,
+          onPageChanged: (pageIndex) {
+            print('onPageChanged:$pageIndex');
+            final willLoadIndex = pageIndex + 1;
+            if (controllerMap[willLoadIndex] != null) {
+              return;
+            }
+            if (videoUrls.length <= willLoadIndex) {
+              return;
+            }
+            final willLoadVideoUrl = videoUrls[willLoadIndex];
+            final videoController =
+                VideoPlayerController.network(willLoadVideoUrl);
+            videoController.initialize().then((_) {
+              ref.read(initializedIndexProvider.notifier).state = [
+                ...ref.read(initializedIndexProvider),
+                willLoadIndex
+              ];
+              videoController.setLooping(true);
+              print('initialized: $willLoadIndex');
+            });
+            controllerMap[willLoadIndex] = videoController;
+          },
           itemBuilder: (_, index) {
-            print('initializedIndexes:$initializedIndexes');
             if (!initializedIndexes.contains(index)) {
-              return const Center(child: CircularProgressIndicator());
+              return GestureDetector(
+                  onTap: () {
+                    setState(() {});
+                  },
+                  child: const Center(child: CircularProgressIndicator()));
             }
             final controller = controllerMap[index]!;
             return VideoPlayerWidget(
